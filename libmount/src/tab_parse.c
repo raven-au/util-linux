@@ -853,6 +853,98 @@ int mnt_table_parse_fsinfo(struct libmnt_table *tb)
 	return rc;
 }
 
+#ifdef USE_LIBMOUNT_SUPPORT_FSINFO
+static int mnt_table_lookup_path_id(struct libmnt_table *tb,
+				    unsigned int id, const char *path)
+{
+	struct libmnt_fs *fs;
+	const char *target;
+	int rc;
+
+	DBG(UTILS, ul_debug("fsinfo lookup: start lookup for id %u", id));
+
+	fs = mnt_new_fs();
+	if (!fs) {
+		rc = -ENOMEM;
+		goto err;
+	}
+
+	fs->id = id;
+
+	/* TODO: review error returns, fsinfo() will return -EPERM for
+	 * not found but may be return it for other cases, probably
+	 * needs to change to something else unique for not found.
+	 */
+	rc = mnt_fs_fetch_fsinfo(fs, -1);
+	if (rc < 0)
+		goto err_free;
+
+	/* Termination condition */
+	target = mnt_fs_get_target(fs);
+	if (strcmp(path, target)) {
+		mnt_free_fs(fs);
+		goto done;
+	}
+
+	if (fs->parent && fs->parent != fs->id) {
+		rc = mnt_table_lookup_path_id(tb, fs->parent, path);
+		if (rc < 0)
+			goto err_free;
+	}
+
+	fs->optstr = mnt_fs_strdup_options(fs);
+	if (!fs->optstr) {
+		rc = -ENOMEM;
+		goto err_free;
+	}
+
+	rc = mnt_table_add_fs(tb, fs);
+	if (rc)
+		goto err_free;
+done:
+	DBG(UTILS, ul_debug("fsinfo lookup : done lookup of id %u", id));
+	return 0;
+
+err_free:
+	mnt_free_fs(fs);
+err:
+	DBG(UTILS, ul_debug("fsinfo lookup: error (rc=%d)", rc));
+	return rc;
+}
+#endif /* USE_LIBMOUNT_SUPPORT_FSINFO */
+
+int mnt_table_lookup_path_fsinfo(struct libmnt_table *tb, const char *path)
+{
+	int rc = -ENOSYS;
+	unsigned int id;
+
+	assert(tb);
+
+	if (!path)
+		return -EINVAL;
+
+#ifdef USE_LIBMOUNT_SUPPORT_FSINFO
+	if (!mnt_has_fsinfo())
+		goto out;
+
+	DBG(UTILS, ul_debug("fsinfo lookup: start lookup for path %s", path));
+
+	rc = mnt_get_target_id(path, &id, AT_NO_AUTOMOUNT);
+	if (rc < 0)
+		goto err;
+
+	rc = mnt_table_lookup_path_id(tb, id, path);
+	/* TODO: reset and free table on error */
+
+	DBG(UTILS, ul_debug("fsinfo lookup : done lookup for path %s", path));
+	return rc;
+err:
+	DBG(UTILS, ul_debug("fsinfo lookup: error (rc=%d)", rc));
+out:
+#endif
+	return rc;
+}
+
 static int __table_parse_stream(struct libmnt_table *tb, FILE *f, const char *filename)
 {
 	int rc = -1;

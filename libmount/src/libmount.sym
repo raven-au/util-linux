@@ -362,5 +362,6 @@ MOUNT_2_36 {
 	mnt_fs_has_fsinfo;
 	mnt_has_fsinfo;
 	mnt_table_parse_fsinfo;
+	mnt_table_lookup_path_fsinfo;
 } MOUNT_2_35;
 
